@@ -1,6 +1,8 @@
 #![no_std]
 #![no_main]
 
+use core::fmt::Write as _;
+
 use cortex_m::delay::Delay;
 use cortex_m_rt::entry;
 use panic_halt as _;
@@ -8,6 +10,7 @@ use panic_halt as _;
 use stm32f3xx_hal::{
     pac,
     prelude::*,
+    serial::{config::Config, Serial},
 };
 
 #[entry]
@@ -46,31 +49,43 @@ fn main() -> ! {
 
     // =====================================================
     // STEP 5:
-    // Enable/configure GPIOE
+    // Enable/configure GPIOA
     //
-    // LED3 is connected to PE9.
+    // USART2 TX is connected to PA2.
+    // USART2 RX is connected to PA3.
     // =====================================================
-    let mut gpioe = dp
-        .GPIOE
-        .split(&mut rcc.ahb);
+    let mut gpioa = dp.GPIOA.split(&mut rcc.ahb);
 
     // =====================================================
     // STEP 6:
-    // Configure all LED pins as push-pull outputs
-    //
-    // LED3  = PE9  (Red)
-    // LED4  = PE8  (Blue)
-    // LED5  = PE10 (Orange)
-    // LED6  = PE15 (Green)
-    // LED7  = PE11 (Green)
-    // LED8  = PE14 (Orange)
-    // LED9  = PE12 (Blue)
-    // LED10 = PE13 (Red)
+    // Configure PA2 and PA3 for USART2 TX/RX
     // =====================================================
-    let mut led3  = gpioe.pe9  .into_push_pull_output(&mut gpioe.moder, &mut gpioe.otyper);
+    let tx = gpioa.pa2.into_af_push_pull::<7>(
+        &mut gpioa.moder,
+        &mut gpioa.otyper,
+        &mut gpioa.afrl,
+    );
+    let rx = gpioa.pa3.into_af_push_pull::<7>(
+        &mut gpioa.moder,
+        &mut gpioa.otyper,
+        &mut gpioa.afrl,
+    );
 
     // =====================================================
     // STEP 7:
+    // Configure USART2
+    // =====================================================
+    let config = Config::default().baudrate(115_200.Bd());
+    let mut serial = Serial::new(
+        dp.USART2,
+        (tx, rx),
+        config,
+        clocks,
+        &mut rcc.apb1,
+    );
+
+    // =====================================================
+    // STEP 8:
     // Configure SysTick based delay
     // =====================================================
     let mut delay = Delay::new(
@@ -79,22 +94,13 @@ fn main() -> ! {
     );
 
     // =====================================================
-    // STEP 8:
-    // Initial LED state - all OFF
-    // =====================================================
-    led3.set_low().ok();
-    // =====================================================
     // STEP 9:
-    // Main superloop
+    // Main loop
     //
-    // Sequence: LED3 → LED4 → LED6 → LED8 → LED10 → LED9 → LED7 → LED5 → repeat
+    // Transmit "hello rust" every second
     // =====================================================
     loop {
-        // LED3 (PE9)
-        led3.set_high().ok();
-        delay.delay_ms(500_u32);
-        led3.set_low().ok();
-        delay.delay_ms(500_u32);
-
+        writeln!(serial, "hello rust").ok();
+        delay.delay_ms(1_000_u32);
     }
 }
